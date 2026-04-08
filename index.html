@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoStatus - Oficina Inteligente</title>
+    <style>
+        :root {
+            --primary: #1a1a1a;
+            --accent: #f39c12;
+            --bg: #f4f7f6;
+            --text: #333;
+            --success: #27ae60;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+        
+        header { background: var(--primary); color: white; padding: 1rem; text-align: center; border-bottom: 4px solid var(--accent); }
+
+        .container { max-width: 800px; margin: 20px auto; padding: 0 20px; }
+
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 20px; }
+
+        h2 { color: var(--primary); font-size: 1.2rem; margin-top: 0; border-left: 4px solid var(--accent); padding-left: 10px; }
+
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+
+        button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: var(--accent); color: var(--primary); }
+
+        .status-badge { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; }
+        .status-pendente { background: #ffeaa7; color: #d35400; }
+        .status-andamento { background: #81ecec; color: #0097e6; }
+        .status-pronto { background: #55efc4; color: #00b894; }
+
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { flex: 1; background: #ddd; color: #555; }
+        .tab-btn.active { background: var(--accent); color: white; }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>AutoStatus 🔧</h1>
+</header>
+
+<div class="container">
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('admin')">Mecânico</button>
+        <button class="tab-btn" onclick="switchTab('cliente')">Cliente (Consulta)</button>
+    </div>
+
+    <section id="panel-admin">
+        <div class="card">
+            <h2>Cadastrar Nova O.S.</h2>
+            <input type="text" id="clienteNome" placeholder="Nome do Cliente">
+            <input type="text" id="placa" placeholder="Placa do Veículo (Ex: ABC1234)">
+            <input type="text" id="servico" placeholder="Serviço a realizar">
+            <button onclick="salvarOS()">Registrar Entrada</button>
+        </div>
+
+        <div id="listaOrdens"></div>
+    </section>
+
+    <section id="panel-cliente" class="hidden">
+        <div class="card" style="text-align: center;">
+            <h2>Consultar Meu Veículo</h2>
+            <p>Digite sua placa para ver o status em tempo real.</p>
+            <input type="text" id="buscaPlaca" placeholder="Digite a placa...">
+            <button onclick="consultarStatus()" style="background: var(--accent);">Consultar Agora</button>
+        </div>
+        <div id="resultadoBusca"></div>
+    </section>
+</div>
+
+<script>
+    // Inicialização do Banco de Dados Local
+    let db = JSON.parse(localStorage.getItem('oficina_db')) || [];
+
+    // Pedir permissão para notificações
+    if (Notification.permission !== "granted") {
+        Notification.requestPermission();
+    }
+
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('panel-admin').classList.add('hidden');
+        document.getElementById('panel-cliente').classList.add('hidden');
+        
+        if(tab === 'admin') {
+            document.getElementById('panel-admin').classList.remove('hidden');
+            document.querySelectorAll('.tab-btn')[0].classList.add('active');
+            renderAdminList();
+        } else {
+            document.getElementById('panel-cliente').classList.remove('hidden');
+            document.querySelectorAll('.tab-btn')[1].classList.add('active');
+        }
+    }
+
+    function salvarOS() {
+        const nome = document.getElementById('clienteNome').value;
+        const placa = document.getElementById('placa').value.toUpperCase();
+        const servico = document.getElementById('servico').value;
+
+        if(!nome || !placa) return alert("Preencha os dados básicos!");
+
+        const novaOS = {
+            id: Date.now(),
+            nome,
+            placa,
+            servico,
+            status: 'pendente',
+            data: new Date().toLocaleDateString()
+        };
+
+        db.push(novaOS);
+        localStorage.setItem('oficina_db', JSON.stringify(db));
+        renderAdminList();
+        alert("Ordem de serviço criada!");
+    }
+
+    function alterarStatus(id, novoStatus) {
+        const index = db.findIndex(os => os.id === id);
+        db[index].status = novoStatus;
+        localStorage.setItem('oficina_db', JSON.stringify(db));
+        
+        if(novoStatus === 'pronto') {
+            dispararNotificacao(db[index].nome, db[index].placa);
+        }
+        renderAdminList();
+    }
+
+    function dispararNotificacao(nome, placa) {
+        if (Notification.permission === "granted") {
+            new Notification("Veículo Pronto! ✅", {
+                body: `Olá ${nome}, seu veículo (${placa}) já pode ser retirado.`,
+                icon: "https://cdn-icons-png.flaticon.com/512/1995/1995470.png"
+            });
+        }
+    }
+
+    function renderAdminList() {
+        const container = document.getElementById('listaOrdens');
+        container.innerHTML = '<h2>Ordens Ativas</h2>';
+        
+        db.forEach(os => {
+            container.innerHTML += `
+                <div class="card">
+                    <strong>${os.placa} - ${os.nome}</strong><br>
+                    <small>Serviço: ${os.servico}</small><br><br>
+                    <select onchange="alterarStatus(${os.id}, this.value)">
+                        <option value="pendente" ${os.status === 'pendente' ? 'selected' : ''}>Pendente</option>
+                        <option value="andamento" ${os.status === 'andamento' ? 'selected' : ''}>Em Manutenção</option>
+                        <option value="pronto" ${os.status === 'pronto' ? 'selected' : ''}>Pronto para Retirada</option>
+                    </select>
+                </div>
+            `;
+        });
+    }
+
+    function consultarStatus() {
+        const placaBusca = document.getElementById('buscaPlaca').value.toUpperCase();
+        const os = db.find(item => item.placa === placaBusca);
+        const display = document.getElementById('resultadoBusca');
+
+        if(os) {
+            let classe = `status-${os.status}`;
+            let texto = os.status === 'pendente' ? 'Aguardando Início' : 
+                        os.status === 'andamento' ? 'Na Oficina' : 'Liberado / Pronto';
+            
+            display.innerHTML = `
+                <div class="card" style="border-top: 5px solid var(--accent)">
+                    <h3>Veículo: ${os.placa}</h3>
+                    <p><strong>Dono:</strong> ${os.nome}</p>
+                    <p><strong>Serviço:</strong> ${os.servico}</p>
+                    <span class="status-badge ${classe}">${texto.toUpperCase()}</span>
+                </div>
+            `;
+        } else {
+            display.innerHTML = `<p style="text-align:center; color:red;">Placa não encontrada.</p>`;
+        }
+    }
+
+    // Iniciar carregando a lista
+    renderAdminList();
+</script>
+
+</body>
+</html>
