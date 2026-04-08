@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BioControle Diabetes</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #f8f9fa;
+            --card: #ffffff;
+            --primary: #4361ee;
+            --glicose: #4cc9f0;
+            --insulina: #f72585;
+            --remedio: #7209b7;
+            --text: #2b2d42;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 15px;
+        }
+
+        .app-container {
+            max-width: 500px;
+            margin: auto;
+        }
+
+        .card {
+            background: var(--card);
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        h2 { margin-top: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 10px; }
+
+        /* Estilo dos Botões de Função */
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn-mode {
+            border: 2px solid #eee;
+            background: white;
+            padding: 15px 5px;
+            border-radius: 15px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            font-weight: bold;
+            font-size: 0.8rem;
+            transition: 0.3s;
+        }
+
+        .btn-mode.active[data-type="Glicemia"] { border-color: var(--glicose); background: #e0f7ff; color: var(--glicose); }
+        .btn-mode.active[data-type="Insulina"] { border-color: var(--insulina); background: #ffebee; color: var(--insulina); }
+        .btn-mode.active[data-type="Medicação"] { border-color: var(--remedio); background: #f3e5f5; color: var(--remedio); }
+
+        .icon { font-size: 1.5rem; }
+
+        /* Campos de Entrada */
+        .input-group { margin-bottom: 15px; }
+        label { display: block; font-size: 0.85rem; margin-bottom: 5px; color: #666; }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+
+        .btn-save {
+            width: 100%;
+            padding: 15px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(67, 97, 238, 0.3);
+        }
+
+        /* Gráfico e Tabela */
+        .chart-box { height: 250px; width: 100%; }
+        
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .history-info b { font-size: 1rem; }
+        .history-info span { font-size: 0.75rem; color: #888; display: block; }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header style="text-align: center; padding: 10px 0;">
+        <h1 style="color: var(--primary); margin: 0;">GlicoLife 🩺</h1>
+        <p style="font-size: 0.9rem; color: #888;">Controle Inteligente</p>
+    </header>
+
+    <div class="card">
+        <h2>1. O que vamos registrar?</h2>
+        <div class="button-grid">
+            <button class="btn-mode active" data-type="Glicemia" onclick="setType('Glicemia')">
+                <span class="icon">🩸</span> Glicemia
+            </button>
+            <button class="btn-mode" data-type="Insulina" onclick="setType('Insulina')">
+                <span class="icon">💉</span> Insulina
+            </button>
+            <button class="btn-mode" data-type="Medicação" onclick="setType('Medicação')">
+                <span class="icon">💊</span> Remédio
+            </button>
+        </div>
+
+        <div class="input-group">
+            <label id="label-valor">Valor da Glicemia (mg/dL)</label>
+            <input type="number" id="valorPrincipal" placeholder="Ex: 110">
+        </div>
+
+        <div class="input-group">
+            <label>Data e Hora</label>
+            <input type="datetime-local" id="dataRegistro">
+        </div>
+
+        <button class="btn-save" onclick="salvarRegistro()">SALVAR REGISTRO</button>
+    </div>
+
+    <div class="card">
+        <h2>📈 Tendência (Últimos 7)</h2>
+        <div class="chart-box">
+            <canvas id="meuGrafico"></canvas>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📜 Histórico</h2>
+        <div id="listaHistorico"></div>
+    </div>
+</div>
+
+<script>
+    let tipoSelecionado = "Glicemia";
+    let dados = JSON.parse(localStorage.getItem('diabetes_db')) || [];
+    let grafico;
+
+    // Alternar botões intuitivos
+    function setType(tipo) {
+        tipoSelecionado = tipo;
+        document.querySelectorAll('.btn-mode').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`.btn-mode[data-type="${tipo}"]`).classList.add('active');
+        
+        const label = document.getElementById('label-valor');
+        if(tipo === 'Glicemia') label.innerText = "Valor da Glicemia (mg/dL)";
+        else if(tipo === 'Insulina') label.innerText = "Unidades aplicadas (UI)";
+        else label.innerText = "Dose/Comprimido";
+    }
+
+    function salvarRegistro() {
+        const valor = document.getElementById('valorPrincipal').value;
+        const data = document.getElementById('dataRegistro').value;
+
+        if(!valor || !data) return alert("Preencha todos os campos!");
+
+        const registro = {
+            tipo: tipoSelecionado,
+            valor: valor,
+            data: data,
+            timestamp: new Date(data).getTime()
+        };
+
+        dados.push(registro);
+        dados.sort((a,b) => a.timestamp - b.timestamp);
+        localStorage.setItem('diabetes_db', JSON.stringify(dados));
+        
+        atualizarTela();
+        document.getElementById('valorPrincipal').value = '';
+    }
+
+    function atualizarTela() {
+        // Histórico
+        const lista = document.getElementById('listaHistorico');
+        const ultimos = [...dados].reverse().slice(0, 5);
+        
+        lista.innerHTML = ultimos.map(item => {
+            const cores = { Glicemia: '#4cc9f0', Insulina: '#f72585', Medicação: '#7209b7' };
+            const ícones = { Glicemia: '🩸', Insulina: '💉', Medicação: '💊' };
+            return `
+                <div class="history-item">
+                    <div class="history-info">
+                        <span>${new Date(item.data).toLocaleString('pt-BR')}</span>
+                        <b>${ícones[item.tipo]} ${item.valor}</b>
+                    </div>
+                    <span class="badge" style="background:${cores[item.tipo]}">${item.tipo}</span>
+                </div>
+            `;
+        }).join('');
+
+        // Gráfico (apenas glicemia)
+        const dadosGlicemia = dados.filter(d => d.tipo === 'Glicemia').slice(-7);
+        grafico.data.labels = dadosGlicemia.map(d => new Date(d.data).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}));
+        grafico.data.datasets[0].data = dadosGlicemia.map(d => d.valor);
+        grafico.update();
+    }
+
+    // Inicializar Gráfico
+    const ctx = document.getElementById('meuGrafico').getContext('2d');
+    grafico = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Glicemia',
+                data: [],
+                borderColor: '#4361ee',
+                backgroundColor: 'rgba(67, 97, 238, 0.1)',
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    // Configurar data atual e carregar dados
+    window.onload = () => {
+        const agora = new Date();
+        agora.setMinutes(agora.getMinutes() - agora.getTimezoneOffset());
+        document.getElementById('dataRegistro').value = agora.toISOString().slice(0,16);
+        atualizarTela();
+    };
+</script>
+
+</body>
+</html>
